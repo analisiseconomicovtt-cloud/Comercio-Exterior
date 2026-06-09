@@ -1,0 +1,363 @@
+---
+lang: es
+
+params:
+  anho:       2026L
+  mes:        3L
+  ano_ini:    2017L
+  anho_idx:   2019L
+  flagmadmes:  true
+  flagespmes:  true
+  flagmadytm:  true
+  flagespytm:  true
+  flagmadanop: true
+  flagespanop: true
+  flag_ccaa:   true
+
+execute:
+  echo:    false
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| include: false
+
+# Carga de librerías
+source("./scr/R/nota_sectores_bis/procfun/librerias.R")
+
+# ----------------------------------------------------------
+# PARÁMETROS
+# ----------------------------------------------------------
+# Cargamos parametros.r (valores por defecto de toda la lista)
+# y sobreescribimos los cuatro campos clave con los que llegan
+# desde render_docx_sectores.r via execute_params.
+#
+# NOTA sobre params$mes:
+#   Quarto serializa los params en YAML, que no tiene vectores
+#   R nativos. Para pasar un trimestre, render_docx_sectores.r
+#   convierte el vector a string "4:6" antes de enviarlo.
+#   Aquí lo convertimos de vuelta a vector entero.
+# ----------------------------------------------------------
+source("./scr/R/nota_sectores_bis/procfun/parametros.r")
+
+# Convertir mes: acepta entero (8), string numérico ("8")
+# o rango como string ("4:6")
+.parse_mes <- function(x) {
+  x <- as.character(x)
+  if (grepl("^\\d+:\\d+$", x)) {
+    # Formato rango: "4:6" → 4L:6L
+    partes <- as.integer(strsplit(x, ":")[[1]])
+    seq.int(partes[1], partes[2])
+  } else {
+    as.integer(x)
+  }
+}
+
+paramets <- modifyList(paramets, list(
+  anho        = as.integer(params$anho),
+  mes         = .parse_mes(params$mes),
+  ano_ini     = as.integer(params$ano_ini),
+  anho_idx    = as.integer(params$anho_idx),
+  flagmadmes  = isTRUE(params$flagmadmes),
+  flagespmes  = isTRUE(params$flagespmes),
+  flagmadytm  = isTRUE(params$flagmadytm),
+  flagespytm  = isTRUE(params$flagespytm),
+  flagmadanop = isTRUE(params$flagmadanop),
+  flagespanop = isTRUE(params$flagespanop),
+  flag_ccaa   = isTRUE(params$flag_ccaa)
+))
+
+# configaux genera rutas, crea directorios, mes_label,
+# fecha_hoy, sufijo_mes, sufijo_ytm, sufijo_anopas
+source("./scr/R/nota_sectores_bis/procfun/configaux.r")
+
+# Pipeline ETL y outputs
+source("./scr/R/nota_sectores_bis/main_etl.r")
+source("./scr/R/nota_sectores_bis/main_tablas.R")
+source("./scr/R/nota_sectores_bis/main_phtmls.R")
+source("./scr/R/nota_sectores_bis/main_texts.R")
+
+# Helper: devuelve fallback si el objeto o campo no existe
+.safe <- function(expr, fallback = "") {
+  tryCatch(expr, error = function(e) fallback)
+}
+```
+
+```{r img_list}
+#| include: false
+#| eval: false
+
+imgs <- list(
+  contrib_exp_mad_pais  = sprintf("contrib_exp_mad_pais_%s.png",  sufijo_mes),
+  contrib_exp_mad_sec   = sprintf("contrib_exp_mad_sec_%s.png",   sufijo_mes),
+  contrib_imp_mad_pais  = sprintf("contrib_imp_mad_pais_%s.png",  sufijo_mes),
+  contrib_imp_mad_sec   = sprintf("contrib_imp_mad_sec_%s.png",   sufijo_mes),
+  plot1_mad_evo_mes     = "plot1_mad_evo_mes.png",
+  # plot1_ccaa          = "table_p1_t1.png",
+  plot2_mad_mm12_anos   = "plot2_mad_mm12_anos.png",
+  tbl_sec_spark_mad     = sprintf("tabla_sec_spark_mad_%s.png",   sufijo_mes),
+  tbl_pais_spark_mad    = sprintf("tabla_pais_spark_mad_%s.png",  sufijo_mes),
+  treemap_exp_mad_pais  = sprintf("treemap_exp_mad_pais_%s.png",  sufijo_mes),
+  treemap_exp_mad_sec   = sprintf("treemap_exp_mad_sec_%s.png",   sufijo_mes),
+  treemap_imp_mad_pais  = sprintf("treemap_imp_mad_pais_%s.png",  sufijo_mes),
+  treemap_imp_mad_sec   = sprintf("treemap_imp_mad_sec_%s.png",   sufijo_mes)
+)
+
+imgs <- lapply(imgs, function(f) file.path(paramets$path_outp, f))
+```
+
+```{r bloque-ultimo-dato}
+#| echo: false
+#| results: asis
+#| eval: !expr exists("lista_mad") && exists("lista_esp")
+
+cat(paste0(
+  "## EL ÚLTIMO DATO\n\n",
+  "La Secretaría de Estado de Comercio ha publicado los datos de comercio exterior correspondientes a **",
+  .fmt_mna(paramets$mes), " de ", paramets$anho, "**. ",
+  "Según esta fuente, las **exportaciones de la Comunidad de Madrid** alcanzaron los **",
+  .fmt_num(lista_mad$exp_euros), "** millones de euros, lo que supone ",
+  ifelse(lista_mad$exp_euros_tva >= 0, "un **incremento**", "una **disminución**"),
+  " interanual del **", paste0(.fmt_pct(abs(lista_mad$exp_euros_tva)), "%"), "**, ",
+  lista_mad$exp_rank_hist_txt, ". \n",
+  "En cuanto a las **importaciones**, estas ascendieron a **",
+  .fmt_num(lista_mad$imp_euros), "** millones de euros en **",
+  .fmt_mna(paramets$mes), "**, registrando ",
+  ifelse(lista_mad$imp_euros_tva >= 0, "un incremento", "una disminución"),
+  " interanual del **", paste0(.fmt_pct(abs(lista_mad$imp_euros_tva)), "%"), "**, ",
+  lista_mad$imp_rank_hist_txt, ". \n",
+  "La **tasa de cobertura** se situó en el **",
+  .fmt_pct((lista_mad$exp_euros / lista_mad$imp_euros) * 100), "**%. \n",
+  "En el ranking autonómico, Madrid ocupó la **",
+  .fmt_ordinal(lista_mad$exp_euros_rank), "** posición en exportaciones y la **",
+  .fmt_ordinal(lista_mad$imp_euros_rank), "** posición en importaciones.\n\n",
+  "En el **", .per_label(paramets$mes, paramets$anho), "**, las exportaciones madrileñas alcanzaron los **",
+  .fmt_num(lista_mad$exp_euros_acu), "** millones de euros, con ",
+  ifelse(lista_mad$exp_euros_acu_tva >= 0, "un incremento", "una disminución"),
+  " interanual del **", paste0(.fmt_pct(abs(lista_mad$exp_euros_acu_tva)), "%"), "**. ",
+  "La tasa de cobertura se situó en el **",
+  .fmt_pct((lista_mad$exp_euros_acu / lista_mad$imp_euros_acu) * 100), "**%.\n\n"
+))
+```
+
+```{r bloque-contexto-nacional}
+#| echo: false
+#| results: asis
+#| eval: !expr exists("lista_esp") && exists("lista_mad")
+
+cat(paste0(
+  "## CONTEXTO NACIONAL\n\n",
+  "En el conjunto nacional, las **exportaciones** registraron en **",
+  .fmt_mna(paramets$mes), "** un valor de **",
+  .fmt_num(lista_esp$exp_euros), "** millones de euros, lo que representa ",
+  ifelse(lista_esp$exp_euros_tva >= 0, "un **incremento**", "una **disminución**"),
+  " interanual del **", paste0(.fmt_pct(abs(lista_esp$exp_euros_tva)), "%"), "**. ",
+  "Las **importaciones**, por su parte, ascendieron a **",
+  .fmt_num(lista_esp$imp_euros), "** millones de euros, con ",
+  ifelse(lista_esp$imp_euros_tva >= 0, "un **incremento**", "una **disminución**"),
+  " interanual del **", paste0(.fmt_pct(abs(lista_esp$imp_euros_tva)), "%"), "**. ",
+  "La **tasa de cobertura** nacional se situó en el **",
+  .fmt_pct((lista_esp$exp_euros / lista_esp$imp_euros) * 100), "**%.\n\n",
+  "En el acumulado **", .per_label(paramets$mes, paramets$anho), "**, las **exportaciones** nacionales alcanzaron los **",
+  .fmt_num(lista_esp$exp_euros_acu), "** millones de euros, registrando ",
+  ifelse(lista_esp$exp_euros_acu_tva >= 0, "un **incremento**", "una **disminución**"),
+  " interanual del **", paste0(.fmt_pct(abs(lista_esp$exp_euros_acu_tva)), "%"), "**. ",
+  "Las **importaciones** se situaron en **",
+  .fmt_num(lista_esp$imp_euros_acu), "** millones de euros, con ",
+  ifelse(lista_esp$imp_euros_acu_tva >= 0, "un **incremento**", "una **disminución**"),
+  " interanual del **", paste0(.fmt_pct(abs(lista_esp$imp_euros_acu_tva)), "%"), "**. ",
+  "La **tasa de cobertura** alcanzó el **",
+  .fmt_pct((lista_esp$exp_euros_acu / lista_esp$imp_euros_acu) * 100), "**%.\n\n",
+  "Las exportaciones madrileñas representaron el **",
+  paste0(.fmt_pct(lista_mad$exp_euros_peso), "%"),
+  "** del total nacional, situando a la Comunidad de Madrid en la **",
+  c("primera", "segunda", "tercera", "cuarta", "quinta")[lista_mad$exp_euros_rank],
+  "** posición del ranking autonómico. ",
+  "Por su parte, las importaciones regionales concentraron el **",
+  paste0(.fmt_pct(lista_mad$imp_euros_peso), "%"),
+  "** del total nacional, lo que colocó a Madrid en la **",
+  c("primera", "segunda", "tercera", "cuarta", "quinta")[lista_mad$imp_euros_rank],
+  "** posición entre las comunidades autónomas.\n\n",
+  "[MARCADOR_P1_PLOT1]\n"
+))
+```
+
+```{r render-tabla-ccaa-inline}
+#| echo: false
+#| warning: false
+#| message: false
+#| ft.align: "left"
+#| ft.keepnext: false
+#| eval: !expr isTRUE(paramets$flag_ccaa) && exists("ft_ccaa")
+
+ft_ccaa
+```
+
+{{< pagebreak >}}
+
+```{r texto-ccaa}
+#| echo: false
+#| results: asis
+#| eval: !expr isTRUE(paramets$flag_ccaa) && exists("lista_texto_ccaas")
+
+cat(paste0(
+  "De las 17 comunidades autónomas, ", lista_texto_ccaas$lbl_exp_inc,
+  " exportaciones interanuales, mientras que en el caso de las importaciones ",
+  lista_texto_ccaas$lbl_imp_inc,
+  ". En cuanto a las contribuciones regionales a la variación de las **exportaciones**, estas estuvieron impulsadas principalmente por ",
+  lista_texto_ccaas$exp_pos,
+  ", mientras que las mayores contribuciones negativas procedieron de ",
+  lista_texto_ccaas$exp_neg,
+  ". En las **importaciones**, destacaron positivamente ",
+  lista_texto_ccaas$imp_pos,
+  ", frente a las contribuciones negativas de ",
+  lista_texto_ccaas$imp_neg, "."
+))
+```
+
+```{r texto-sectores-nacional}
+#| echo: false
+#| results: asis
+#| eval: !expr exists("lista_texto_sectores")
+
+cat(paste0(
+  "En cuanto a la composición sectorial del comercio exterior nacional en **",
+  .fmt_mna(paramets$mes), " de ", paramets$anho,
+  "**, las **exportaciones** registraron contribuciones positivas procedentes de ",
+  lista_texto_sectores$exp_pos_esp,
+  ", mientras que las principales detracciones provinieron de ",
+  lista_texto_sectores$exp_neg_esp,
+  ".\n\n",
+  "Por el lado de las **importaciones**, las principales contribuciones positivas correspondieron a ",
+  lista_texto_sectores$imp_pos_esp,
+  ", frente a las detracciones de ",
+  lista_texto_sectores$imp_neg_esp, ".\n"
+))
+```
+
+## COMPARATIVA INTERNACIONAL
+
+```{r marcador-p2}
+#| echo: false
+#| results: asis
+#| eval: !expr isTRUE(paramets$flag_ccaa)
+
+cat("[MARCADOR_P2_PLOT2]")
+```
+
+{{< pagebreak >}}
+
+```{r bloque-exportaciones-sectores}
+#| echo: false
+#| results: asis
+#| eval: !expr exists("lista_mad") && exists("lista_texto_sectores")
+
+cat(paste0(
+  "## EXPORTACIONES POR SECTORES\n\n",
+  "En cuanto a las **exportaciones**, que en **",
+  .fmt_mna(paramets$mes), " de ", paramets$anho, "** registraron ",
+  ifelse(lista_mad$exp_euros_tva >= 0, "un aumento", "una caída"),
+  " del **", paste0(.fmt_pct(abs(lista_mad$exp_euros_tva)), "%"),
+  "**, las principales contribuciones positivas por sectores proceden de ",
+  lista_texto_sectores$exp_pos,
+  ", mientras que las mayores detracciones provienen de ",
+  lista_texto_sectores$exp_neg,
+  ". A nivel de subsector, destacaron positivamente ",
+  lista_texto_sectores$subsec_exp_pos,
+  ", frente a las detracciones de ",
+  lista_texto_sectores$subsec_exp_neg, "\n\n",
+  "En el **", .per_label(paramets$mes, paramets$anho),
+  "**, la composición sectorial de las **exportaciones** regionales estuvo impulsada por ",
+  lista_texto_sectores$exp_pos_acu,
+  ", mientras que las principales detracciones procedieron de ",
+  lista_texto_sectores$exp_neg_acu, ".\n\n",
+  "[MARCADOR_P3_CONTRIB]\n\n",
+  "[MARCADOR_P3_TREEMAP]\n"
+))
+```
+
+{{< pagebreak >}}
+
+```{r bloque-importaciones-sectores}
+#| echo: false
+#| results: asis
+#| eval: !expr exists("lista_mad") && exists("lista_texto_sectores")
+
+cat(paste0(
+  "## IMPORTACIONES POR SECTORES\n\n",
+  "En cuanto a las **importaciones**, que en **",
+  .fmt_mna(paramets$mes), " de ", paramets$anho, "** registraron ",
+  ifelse(lista_mad$imp_euros_tva >= 0, "un aumento", "una caída"),
+  " del **", paste0(.fmt_pct(abs(lista_mad$imp_euros_tva)), "%"),
+  "**, las principales contribuciones positivas por sectores proceden de ",
+  lista_texto_sectores$imp_pos,
+  ", mientras que las mayores detracciones provienen de ",
+  lista_texto_sectores$imp_neg,
+  ". A nivel de subsector, destacaron positivamente ",
+  lista_texto_sectores$subsec_imp_pos,
+  ", frente a las detracciones de ",
+  lista_texto_sectores$subsec_imp_neg, ".\n\n",
+  "En las **importaciones** acumuladas, las contribuciones positivas correspondieron a ",
+  lista_texto_sectores$imp_pos_acu,
+  ", frente a las detracciones de ",
+  lista_texto_sectores$imp_neg_acu, ".\n\n",
+  "[MARCADOR_P4_CONTRIB]\n\n",
+  "[MARCADOR_P4_TREEMAP]\n"
+))
+```
+
+{{< pagebreak >}}
+
+```{r bloque-exportaciones-paises}
+#| echo: false
+#| results: asis
+#| eval: !expr exists("lista_mad") && exists("lista_texto_paises")
+
+cat(paste0(
+  "## EXPORTACIONES POR PAÍSES\n\n",
+  "En cuanto al **destino geográfico de las exportaciones madrileñas** en **",
+  .fmt_mna(paramets$mes), " de ", paramets$anho,
+  "**, los principales mercados impulsores fueron ",
+  lista_texto_paises$exp_pos,
+  ", mientras que las mayores detracciones procedieron de ",
+  lista_texto_paises$exp_neg, ".\n\n",
+  "En el **", .per_label(paramets$mes, paramets$anho),
+  "**, las **exportaciones** madrileñas estuvieron impulsadas geográficamente por ",
+  lista_texto_paises$exp_pos_acu,
+  ", mientras que las principales detracciones procedieron de ",
+  lista_texto_paises$exp_neg_acu, ".\n\n",
+  "[MARCADOR_P5_CONTRIB]\n\n",
+  "[MARCADOR_P5_TREEMAP]\n"
+))
+```
+
+{{< pagebreak >}}
+
+```{r bloque-importaciones-paises}
+#| echo: false
+#| results: asis
+#| eval: !expr exists("lista_mad") && exists("lista_texto_paises")
+
+cat(paste0(
+  "## IMPORTACIONES POR PAÍSES\n\n",
+  "Por el lado de las **importaciones**, los países con mayor contribución positiva fueron ",
+  lista_texto_paises$imp_pos,
+  ", frente a las detracciones registradas en ",
+  lista_texto_paises$imp_neg, ".\n\n",
+  "En las **importaciones** acumuladas, destacaron positivamente ",
+  lista_texto_paises$imp_pos_acu,
+  ", frente a las detracciones de ",
+  lista_texto_paises$imp_neg_acu, ".\n\n",
+  "[MARCADOR_P6_CONTRIB]\n\n",
+  "[MARCADOR_P6_TREEMAP]\n"
+))
+```
+
+{{< pagebreak >}}
+
+[MARCADOR_P7_SPARK]
+
+{{< pagebreak >}}
+
+[MARCADOR_P8_SPARK]

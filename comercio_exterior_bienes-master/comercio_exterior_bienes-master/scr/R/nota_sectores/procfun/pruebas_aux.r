@@ -1,0 +1,7 @@
+source("./scr/R/nota_sectores/procfun/librerias.R")
+source("./scr/R/nota_sectores/procfun/parametros.r")
+source("./scr/R/nota_sectores/main_texts.r")
+source("./scr/R/nota_sectores/main_etl.r")
+source("./scr/R/nota_sectores/main_tablas.R")
+source("./scr/R/nota_sectores/main_phtmls.R")
+# source("./scr/R/nota_sectores/main_tablas_gt.r")
